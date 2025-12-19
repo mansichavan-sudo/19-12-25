@@ -1,0 +1,18 @@
+customer_id,product_id,total_quantity,total_orders,last_purchase,category,product_name,source
+104,1.0,1.0,1,2025-08-21,pest_control,Cockroach management,taxinvoice
+104,6.0,2.0,1,2025-08-21,pest_control,Mosquito management (spraying),taxinvoice
+104,8.0,1.0,1,2025-08-21,pest_control,Rodent management,taxinvoice
+104,63.0,1.0,1,2025-08-21,pest_control,Cockroach management,taxinvoice
+104,70.0,1.0,1,2025-08-19,pest_control,Sanitization service,taxinvoice
+106,71.0,10.0,1,2025-08-19,product_sale,Uv fly control board,taxinvoice
+109,8.0,1.0,1,2025-09-16,pest_control,Rodent management,taxinvoice
+109,67.0,1.0,1,2025-09-16,pest_control,Cockroach & ant management service,taxinvoice
+27,31.0,1.0,1,2025-08-07,product_sale,Rodent bait station (rbs),taxinvoice
+27,34.0,1.0,1,2025-08-07,product_sale,Rat snap trap,taxinvoice
+35,1.0,1.0,1,2025-09-03,pest_control,Cockroach management,taxinvoice
+35,63.0,1.0,1,2025-09-03,pest_control,Cockroach management,taxinvoice
+99,1.0,1.0,1,2025-08-20,pest_control,Cockroach management,taxinvoice
+99,63.0,1.0,1,2025-08-20,pest_control,Cockroach management,taxinvoice
+MAHWAG4376,31.0,1.0,1,2025-07-07,product_sale,Rodent bait station (rbs),purchasehistory
+MAHWAG4376,34.0,1.0,1,2025-07-07,product_sale,Rat snap trap,purchasehistory
+MAHWAG4376,39.0,1.0,1,2025-07-07,product_sale,Ratooout,purchasehistory

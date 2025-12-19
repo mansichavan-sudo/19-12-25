@@ -1,0 +1,720 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>AI Product Recommendations</title>
+
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+
+    <style>
+        body { background: #f5f7fb; }
+        .main-card {
+            border-radius: 18px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.08);
+            padding: 32px;
+        }
+        .section-card {
+            border-radius: 14px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.08);
+            padding: 24px;
+            background: #fff;
+        }
+        textarea { min-height: 140px; }
+        .section-title {
+            font-weight: 700;
+            font-size: 18px;
+        }
+        .email-section { display: none; }
+        .divider-line {
+            border-top: 2px solid #eee;
+            margin: 32px 0;
+        }
+        .result-box {
+            padding: 15px;
+            border-radius: 8px;
+            background: #eef4ff;
+            border-left: 4px solid #3b6dde;
+            margin-top: 10px;
+        }
+        .result-title { font-weight: bold; }
+    </style>
+</head>
+
+<body class="p-4">
+
+<div class="container mt-4">
+    <div class="main-card bg-white">
+
+        <h2 class="text-center mb-4">🤖 AI Product Recommendation System</h2>
+
+        <!-- ============================
+             CUSTOMER SECTION
+        ============================= -->
+        <div class="section-card mt-3">
+            <h5 class="section-title mb-3">Customer Selection</h5>
+
+            <label class="form-label fw-bold">Select Customer</label>
+            <select id="customerDropdown" class="form-select mb-3">
+                <option value="">-- Select Customer --</option>
+            </select>
+
+            <div id="contractInfo" class="p-3 border rounded bg-light mb-3" style="display:none;"></div>
+
+            <!-- CUSTOMER DETAILS -->
+            <div id="customerDetails" class="mt-3" style="display:none;">
+                <p><strong>Customer ID:</strong> <span id="custId"></span></p>
+                <p><strong>Customer Name:</strong> <span id="custName"></span></p>
+                <p><strong>Customer Address:</strong> <span id="custAddress"></span></p>
+
+                 
+            </div>
+
+            <!-- ============================
+                 CONTRACT SECTION
+            ============================= -->
+          <div id="contractInfo"
+                 class="p-3 border rounded bg-light mb-3"
+                 style="display:none;"></div>
+
+            <!-- Purchase History -->
+<div class="section-card mt-4">
+    <div class="d-flex justify-content-between align-items-center">
+        <h5 class="section-title mb-0">🧾 Purchase History</h5>
+        <button class="btn btn-sm btn-outline-primary" onclick="toggleHistory()">Show/Hide</button>
+    </div>
+
+    <div id="purchaseHistoryPanel" class="mt-3" style="display:none;">
+
+        <!-- Summary -->
+        <div class="row mb-3">
+            <div class="col-12">
+                <div class="card p-3 shadow-sm">
+                    <h6 class="mb-1">Total Spend</h6>
+                    <h4 id="phTotalSpend" class="text-success mb-0">₹0.00</h4>
+                </div>
+            </div>
+        </div>
+
+        <!-- Purchase Table -->
+        <div class="table-responsive">
+            <table class="table table-bordered align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Product</th>
+                        <th style="width:100px;">Qty</th>
+                        <th style="width:150px;">Total Amount</th>
+                        <th style="width:130px;">Date</th>
+                    </tr>
+                </thead>
+                <tbody id="phTable">
+                    <tr>
+                        <td colspan="4" class="text-center">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+</div>
+
+<!-- ============================
+     SERVICE PURCHASE HISTORY
+============================= -->
+<div class="section-card mt-4">
+    <div class="d-flex justify-content-between align-items-center">
+        <h5 class="section-title mb-0">🛠️ Service Purchase History</h5>
+        <button class="btn btn-sm btn-outline-primary"
+                onclick="toggleServiceHistory()">Show/Hide</button>
+    </div>
+
+    <div id="serviceHistoryPanel" class="mt-3" style="display:none;">
+
+        <!-- Summary -->
+        <div class="row mb-3">
+            <div class="col-12">
+                <div class="card p-3 shadow-sm">
+                    <h6 class="mb-1">Total Service Value</h6>
+                    <h4 id="shTotalValue" class="text-primary mb-0">₹0.00</h4>
+                </div>
+            </div>
+        </div>
+
+        <!-- Service Table -->
+        <div class="table-responsive">
+            <table class="table table-bordered align-middle">
+                <thead class="table-dark">
+                    <tr>
+                        <th>Service</th>
+                        <th>Contract Type</th>
+                        <th>Status</th>
+                        <th style="width:150px;">Amount</th>
+                        <th style="width:140px;">Start Date</th>
+                    </tr>
+                </thead>
+                <tbody id="shTable">
+                    <tr>
+                        <td colspan="5" class="text-center">Loading...</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+    </div>
+</div>
+
+
+
+            <!-- ============================
+                 UPSALE + CROSS-SALE BUTTONS
+            ============================= -->
+            <div class="d-flex gap-3 mt-3">
+                <button class="btn btn-primary w-50" onclick="getUpsell()">Get Upsell</button>
+                <button class="btn btn-warning w-50" onclick="getCrosssell()">Get Cross-Sell</button>
+            </div>
+
+            <!-- RESULT PANELS -->
+            <div id="upsellResult" class="result-box mt-3" style="display:none;"></div>
+            <div id="crosssellResult" class="result-box mt-3" style="display:none;"></div>
+        </div>
+
+        <div class="divider-line"></div>
+
+        <!-- ============================
+             Message Templates
+        ============================= -->
+        <h4 class="section-title">📩 Suggested Message Templates</h4>
+
+        <select id="messageTemplate" class="form-select mb-3">
+            <option value="">Select Message Template</option>
+            {% for t in templates %}
+                <option value="{{ t.id }}"
+                        data-body="{{ t.body }}"
+                        data-subject="{{ t.subject }}"
+                        data-type="{{ t.message_type }}">
+                    ({{ t.get_message_type_display }}) {{ t.category }} – {{ t.name }}
+                </option>
+            {% endfor %}
+        </select>
+
+        <div id="emailSubjectDiv" class="email-section mb-3">
+            <label class="form-label fw-bold">Email Subject</label>
+            <input id="emailSubject" class="form-control" placeholder="Subject line here...">
+        </div>
+
+        <label class="form-label fw-bold">Message Body</label>
+        <textarea id="messagePreview" class="form-control"></textarea>
+
+        <button class="btn btn-success mt-3 w-100" onclick="openSendModal()">Send to Customer</button>
+
+    </div>
+</div>
+
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+
+/* --------------------------------------------------
+   ON LOAD
+-------------------------------------------------- */
+document.addEventListener("DOMContentLoaded", () => {
+    loadCustomers();
+    document.getElementById("customerDropdown").addEventListener("change", loadCustomerDetails);
+});
+
+/* --------------------------------------------------
+   TEMPLATE RENDERING
+-------------------------------------------------- */
+{% verbatim %}
+function renderTemplate(text, data) {
+    return text
+        .replace(/{{\s*customer_name\s*}}/gi, data.customer_name || "")
+        .replace(/{{\s*recommended_product\s*}}/gi, data.recommended_product || "")
+        .replace(/{{\s*product\s*}}/gi, data.recommended_product || "");
+}
+{% endverbatim %}
+
+/* --------------------------------------------------
+   LOAD CUSTOMERS
+-------------------------------------------------- */
+async function loadCustomers() {
+    try {
+        const res = await fetch('/api/customers/');
+        const data = await res.json();
+
+        const dropdown = document.getElementById('customerDropdown');
+
+        dropdown.innerHTML = `<option value="">-- Select Customer --</option>`;
+
+        (data.customers || data).forEach(c => {
+            dropdown.innerHTML += `
+                <option value="${c.id}"
+                        data-customerid="${c.customerid}"
+                        data-phone="${c.primarycontact || ''}"
+                        data-fullname="${c.fullname}"
+                        data-address="${c.soldtopartyaddress}, ${c.soldtopartycity}, ${c.soldtopartystate} ${c.soldtopartypostal}">
+                    ${c.customerid} – ${c.fullname}
+                </option>`;
+        });
+
+    } catch (err) {
+        console.error("Failed to load customers:", err);
+    }
+}
+
+/* --------------------------------------------------
+   LOAD CUSTOMER DETAILS
+-------------------------------------------------- */ 
+function loadCustomerDetails() {
+    const opt = this.selectedOptions[0];
+
+    if (!opt.value) {
+        document.getElementById("customerDetails").style.display = "none";
+        return;
+    }
+
+    document.getElementById("customerDetails").style.display = "block";
+
+    document.getElementById("custId").textContent = opt.dataset.customerid;
+    document.getElementById("custName").textContent = opt.dataset.fullname;
+    document.getElementById("custAddress").textContent = opt.dataset.address;
+
+    // Product history uses CUSTOMER CODE
+    loadPurchaseHistory(opt.dataset.customerid);
+
+    // Service history uses INTERNAL NUMERIC ID
+    loadServiceHistory(opt.value);
+
+    loadCustomerContract(opt.dataset.customerid);
+}
+
+/* --------------------------------------------------
+   PURCHASE HISTORY
+-------------------------------------------------- */ 
+async function loadPurchaseHistory(customerCode) {
+    const table = document.getElementById("phTable");
+    table.innerHTML = `<tr><td colspan="4" class="text-center">Loading...</td></tr>`;
+
+    try {
+        const res = await fetch(`/api/purchase-history/${customerCode}/`);
+        const data = await res.json();
+        const history = data.purchase_history || [];
+
+        table.innerHTML = "";
+
+        if (!history.length) {
+            table.innerHTML =
+                `<tr><td colspan="4" class="text-danger text-center">No Purchase History</td></tr>`;
+            document.getElementById("phTotalSpend").textContent = "₹0.00";
+            return;
+        }
+
+        let total = 0;
+
+        history.forEach(h => {
+            total += Number(h.total_amount || 0);
+
+            table.innerHTML += `
+                <tr>
+                    <td>${h.product_name}</td>
+                    <td>${h.quantity}</td>
+                    <td>₹${Number(h.total_amount).toFixed(2)}</td>
+                    <td>${new Date(h.purchased_at).toLocaleDateString()}</td>
+                </tr>`;
+        });
+
+        document.getElementById("phTotalSpend").textContent =
+            "₹" + total.toFixed(2);
+
+    } catch (err) {
+        console.error(err);
+        table.innerHTML =
+            `<tr><td colspan="4" class="text-danger text-center">Error loading history</td></tr>`;
+        document.getElementById("phTotalSpend").textContent = "₹0.00";
+    }
+}
+
+
+function toggleHistory() {
+    const p = document.getElementById("purchaseHistoryPanel");
+    p.style.display = p.style.display === "none" ? "block" : "none";
+}
+
+function toggleServiceHistory() {
+    const p = document.getElementById("serviceHistoryPanel");
+    p.style.display = p.style.display === "none" ? "block" : "none";
+}
+ 
+
+async function loadServiceHistory(customerInternalId) {
+    const tableBody = document.getElementById("shTable");
+
+    tableBody.innerHTML = `
+        <tr>
+            <td colspan="5" class="text-center text-muted">
+                Loading service history...
+            </td>
+        </tr>
+    `;
+
+    try {
+        const res = await fetch(`/api/service-history/${customerInternalId}/`);
+        const data = await res.json();
+
+        tableBody.innerHTML = "";
+
+        if (!data.services || data.services.length === 0) {
+            tableBody.innerHTML = `
+                <tr>
+                    <td colspan="5" class="text-center text-muted">
+                        No service history found
+                    </td>
+                </tr>
+            `;
+            return;
+        }
+
+        let total = 0;
+
+        data.services.forEach(s => {
+            total += Number(s.amount || 0);
+
+            tableBody.innerHTML += `
+                <tr>
+                    <td>${s.service_name}</td>
+                    <td>${s.contract_type}</td>
+                    <td><span class="badge bg-success">${s.status}</span></td>
+                    <td>₹${Number(s.amount).toFixed(2)}</td>
+                    <td>${s.start_date}</td>
+                </tr>
+            `;
+        });
+
+        document.getElementById("shTotalValue").textContent =
+            "₹" + total.toFixed(2);
+
+    } catch (err) {
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="5" class="text-danger text-center">
+                    Failed to load service history
+                </td>
+            </tr>
+        `;
+    }
+}
+
+/* --------------------------------------------------
+   SAVE CONTRACT
+-------------------------------------------------- */ 
+/* --------------------------------------------------
+   SAVE CONTRACT  (service_management + serviceproduct)
+-------------------------------------------------- */ 
+
+async function saveContract() {
+    const opt = document.getElementById("customerDropdown").selectedOptions[0];
+    const customerCode = opt.dataset.customerid; 
+
+    if (!customerCode) {
+        alert("Please select customer ");
+        return;
+    }
+
+    const info = document.getElementById("contractInfo");
+    info.style.display = "block";
+    info.innerHTML = "Saving...";
+
+    try {
+        const res = await fetch("/save-contract/", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "X-CSRFToken": getCookie("csrftoken")
+            },
+            body: JSON.stringify({
+                customer_id: customerCode,
+                contract_type: contractType,
+                start_date: startDate
+            })
+        });
+
+        const data = await res.json();
+
+        if (data.success === true) {
+
+            // Reload contract box
+            loadCustomerContract(customerCode);
+
+            info.innerHTML = `
+                <strong>Saved Successfully!</strong><br>
+                <strong>Contract:</strong> ${contractType}<br>
+                <strong>Start Date:</strong> ${startDate}<br>
+                <strong>Service ID:</strong> ${data.service_id}
+            `;
+        } else {
+            info.innerHTML = `<span class="text-danger">${data.error}</span>`;
+        }
+
+    } catch (err) {
+        info.innerHTML = `<span class="text-danger">Error saving contract.</span>`;
+    }
+}
+
+
+
+/* --------------------------------------------------
+   LOAD LATEST CONTRACT (from service_management)
+-------------------------------------------------- */ 
+
+function loadCustomerContract(code) {
+    const info = document.getElementById("contractInfo");
+    info.style.display = "block";
+    info.innerHTML = "Loading...";
+
+    fetch(`/get-contract/${code}/`)
+        .then(r => r.json())
+        .then(d => {
+            if (!d.exists) {
+                info.innerHTML = "<em>No contract available</em>";
+                return;
+            }
+            info.innerHTML = `
+                <strong>Contract Type:</strong> ${d.contract_type}<br>
+                <strong>Start Date:</strong> ${d.start_date}<br>
+                <strong>Status:</strong> ${d.status}<br>
+                <strong>Service ID:</strong> ${d.service_id}
+            `;
+        });
+}
+
+async function getUpsell() {
+    const dropdown = document.getElementById("customerDropdown");
+    const upsellResult = document.getElementById("upsellResult");
+
+    if (!dropdown.value) {
+        alert("Select customer first!");
+        return;
+    }
+
+    const customerId = dropdown.selectedOptions[0].dataset.customerid;
+
+    upsellResult.style.display = "block";
+    upsellResult.innerHTML = "Loading upsell recommendations...";
+
+    try {
+        const res = await fetch(`/api/recommendations/upsell/${customerId}/`);
+        const data = await res.json();
+
+        if ((!data.products?.length) && (!data.services?.length)) {
+            upsellResult.innerHTML = "<strong>No upsell recommendations found.</strong>";
+            return;
+        }
+
+        let html = `<div class="result-title">Upsell Recommendations</div>`;
+
+        /* 🟦 PRODUCTS FIRST */
+        if (data.products?.length) {
+            html += `<h6 class="mt-3">🛒 Product Recommendations</h6><ul>`;
+            data.products.forEach(p => {
+                html += `
+                    <li>
+                        <strong>${p.name}</strong>
+                        <span class="text-muted">
+                            (₹${p.average_price || "N/A"} · Confidence ${p.confidence})
+                        </span>
+                    </li>`;
+            });
+            html += `</ul>`;
+        }
+
+        /* 🟩 SERVICES AFTER */
+        if (data.services?.length) {
+            html += `<h6 class="mt-3">🛠 Service Recommendations</h6><ul>`;
+            data.services.forEach(s => {
+                html += `
+                    <li>
+                        <strong>${s.name}</strong>
+                        <span class="text-muted">
+                            (Confidence ${s.confidence})
+                        </span>
+                    </li>`;
+            });
+            html += `</ul>`;
+        }
+
+        upsellResult.innerHTML = html;
+
+    } catch (err) {
+        upsellResult.innerHTML =
+            `<span class="text-danger">Failed to load upsell recommendations.</span>`;
+    }
+}
+
+async function getCrosssell() {
+    const dropdown = document.getElementById("customerDropdown");
+    const resultBox = document.getElementById("crosssellResult");
+
+    if (!dropdown.value) {
+        alert("Select customer first!");
+        return;
+    }
+
+    const customerId = dropdown.selectedOptions[0].dataset.customerid;
+
+    resultBox.style.display = "block";
+    resultBox.innerHTML = "Loading cross-sell recommendations...";
+
+    try {
+        const res = await fetch(`/api/recommendations/crosssell/${customerId}/`);
+        const data = await res.json();
+
+        if ((!data.products?.length) && (!data.services?.length)) {
+            resultBox.innerHTML = "<strong>No cross-sell recommendations found.</strong>";
+            return;
+        }
+
+        let html = `<div class="result-title">Cross-Sell Recommendations</div>`;
+
+        /* 🟦 PRODUCTS FIRST */
+        if (data.products?.length) {
+            html += `<h6 class="mt-3">🛒 Product Recommendations</h6><ul>`;
+            data.products.forEach(p => {
+                html += `
+                    <li>
+                        <strong>${p.name}</strong>
+                        <span class="text-muted">
+                            (Confidence ${p.confidence})
+                        </span>
+                    </li>`;
+            });
+            html += `</ul>`;
+        }
+
+        /* 🟩 SERVICES AFTER */
+        if (data.services?.length) {
+            html += `<h6 class="mt-3">🛠 Service Recommendations</h6><ul>`;
+            data.services.forEach(s => {
+                html += `
+                    <li>
+                        <strong>${s.name}</strong>
+                        <span class="text-muted">
+                            (Confidence ${s.confidence})
+                        </span>
+                    </li>`;
+            });
+            html += `</ul>`;
+        }
+
+        resultBox.innerHTML = html;
+
+    } catch (err) {
+        resultBox.innerHTML =
+            `<span class="text-danger">Failed to load cross-sell recommendations.</span>`;
+    }
+}
+
+
+/* --------------------------------------------------
+   TEMPLATE SELECTION
+-------------------------------------------------- */
+document.getElementById("messageTemplate").addEventListener("change", function () {
+
+    const opt = this.selectedOptions[0];
+
+    const body = opt.dataset.body || "";
+    const subject = opt.dataset.subject || "";
+    const type = opt.dataset.type;
+
+    const customerName =
+        document.getElementById("customerDropdown")
+        .selectedOptions[0]?.text || "";
+
+    let recommendedProduct = "";
+    const rec = document.querySelector("#personalized-result .alert-info");
+    if (rec) recommendedProduct = rec.textContent.replace("Recommended Product:", "").trim();
+
+    document.getElementById("messagePreview").value =
+        renderTemplate(body, {
+            customer_name: customerName,
+            recommended_product: recommendedProduct
+        });
+
+    if (type === "email") {
+        document.getElementById("emailSubjectDiv").style.display = "block";
+        document.getElementById("emailSubject").value = subject;
+    } else {
+        document.getElementById("emailSubjectDiv").style.display = "none";
+    }
+});
+
+/* --------------------------------------------------
+   SEND MESSAGE
+-------------------------------------------------- */
+function openSendModal() {
+    const cust = document.getElementById("customerDropdown");
+    const temp = document.getElementById("messageTemplate");
+
+    if (!cust.value) return alert("Select customer.");
+    if (!temp.value) return alert("Select template.");
+
+    const name = cust.selectedOptions[0].text;
+    const tmpl = temp.selectedOptions[0].text;
+    const msg = document.getElementById("messagePreview").value;
+    const phone = cust.selectedOptions[0].dataset.phone;
+
+    if (!msg.trim()) return alert("Message is empty.");
+    if (!phone) return alert("Customer has no phone.");
+
+    document.getElementById("confirmCustomer").textContent = name;
+    document.getElementById("confirmTemplate").textContent = tmpl;
+    document.getElementById("confirmBody").textContent = msg;
+
+    document.getElementById("confirmBody").dataset.finalMessage = msg;
+    document.getElementById("confirmBody").dataset.phone = phone;
+
+    new bootstrap.Modal(document.getElementById("sendConfirmModal")).show();
+}
+
+async function confirmSend() {
+    const payload = {
+        customer_id: document.getElementById("customerDropdown").value,
+        template_id: document.getElementById("messageTemplate").value,
+        phone: document.getElementById("confirmBody").dataset.phone,
+        rendered_message: document.getElementById("confirmBody").dataset.finalMessage
+    };
+
+    try {
+        const res = await fetch("/api/send-message/", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+
+        if (data.status === "success") alert("Message sent!");
+        else alert("Failed: " + data.error);
+
+    } catch (err) {
+        alert("Network error.");
+    }
+}
+
+/* --------------------------------------------------
+   CSRF
+-------------------------------------------------- */
+function getCookie(name) {
+    const cookies = document.cookie.split(";");
+    for (let c of cookies) {
+        c = c.trim();
+        if (c.startsWith(name + "="))
+            return decodeURIComponent(c.substring(name.length + 1));
+    }
+    return null;
+}
+
+</script>
+
+</body>
+</html>

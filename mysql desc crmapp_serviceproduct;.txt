@@ -1,0 +1,22 @@
+mysql> desc crmapp_serviceproduct;
++----------------+---------------+------+-----+---------+----------------+
+| Field          | Type          | Null | Key | Default | Extra          |
++----------------+---------------+------+-----+---------+----------------+
+| id             | bigint(20)    | NO   | PRI | NULL    | auto_increment |
+| price          | decimal(10,2) | NO   |     | NULL    |                |
+| quantity       | decimal(10,2) | NO   |     | NULL    |                |
+| gst_percentage | decimal(5,2)  | NO   |     | NULL    |                |
+| total_with_gst | decimal(10,2) | YES  |     | NULL    |                |
+| product_id     | int(11)       | NO   | MUL | NULL    |                |
+| service_id     | bigint(20)    | NO   | MUL | NULL    |                |
+| description    | longtext      | YES  |     | NULL    |                |
++----------------+---------------+------+-----+---------+----------------+ mysql> desc recommender_rating;
++-----------+-------------+------+-----+---------+----------------+
+| Field     | Type        | Null | Key | Default | Extra          |
++-----------+-------------+------+-----+---------+----------------+
+| id        | bigint(20)  | NO   | PRI | NULL    | auto_increment |
+| rating    | double      | NO   |     | NULL    |                |
+| timestamp | datetime(6) | NO   |     | NULL    |                |
+| product_id   | bigint(20)  | NO   | MUL | NULL    |                | 
+| customer_id   | int(11)     | NO   | MUL | NULL    |                | 
++-----------+-------------+------+-----+---------+----------------+Analyze both the tables thoroughly do link these tables also in  this code - 

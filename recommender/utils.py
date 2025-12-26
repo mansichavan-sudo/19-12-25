@@ -213,3 +213,35 @@ def send_recommendation_message(phone_number, message, customer_name="Unknown"):
         )
         print(f"⚠️ RapBooster API Down — Simulated send to {phone_number}")
         return 200, fallback_msg
+
+# recommender/utils.py
+
+from crmapp.models import PurchaseHistory
+
+def is_cf_eligible(customer_id):
+    """
+    CF should only be used when the customer has enough history
+    """
+    return PurchaseHistory.objects.filter(
+        customer_id=customer_id,
+        product_id__isnull=False
+    ).count() >= 2
+
+
+from recommender.models import PestRecommendation
+
+def already_recommended(customer, product=None, service=None):
+    qs = PestRecommendation.objects.filter(
+        customer=customer,
+        serving_state__in=["pending", "served", "accepted"]
+    )
+
+    if product:
+        qs = qs.filter(recommended_product=product)
+
+    if service:
+        qs = qs.filter(recommended_service=service)
+
+    return qs.exists()
+
+

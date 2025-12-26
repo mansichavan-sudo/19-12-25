@@ -51,3 +51,23 @@ def clear_conversation(request):
 
 
 
+from google import genai
+from django.conf import settings
+
+_client = None
+
+def _get_client():
+    global _client
+    if _client is None:
+        _client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    return _client
+
+def generate_ai_message(prompt: str) -> str:
+    client = _get_client()
+
+    response = client.models.generate_content(
+        model="gemini-1.5-flash",
+        contents=prompt
+    )
+
+    return response.text.strip()

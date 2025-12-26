@@ -1,6 +1,41 @@
 from .rapbooster_api import send_whatsapp_message, send_email_message
 from crmapp.models import customer_details
 from .engine import generate_recommendations
+from .models import PestRecommendation
+
+def get_structured_recommendations(customer):
+    recs = PestRecommendation.objects.filter(
+        customer=customer,
+        serving_state="pending"
+    ).order_by("-final_score", "priority")
+
+    output = {
+        "upsell": {"products": [], "services": []},
+        "cross_sell": {"products": [], "services": []},
+    }
+
+    for r in recs:
+        if r.business_intent not in ("upsell", "crosssell"):
+            continue
+
+        bucket = (
+            output["upsell"]
+            if r.business_intent == "upsell"
+            else output["cross_sell"]
+        )
+
+        item = {
+            "name": r.get_item_name(),
+            "confidence": float(r.final_score)
+        }
+
+        if r.reco_channel == "product":
+            bucket["products"].append(item)
+        else:
+            bucket["services"].append(item)
+
+    return output
+
 
 
 def send_recommendations_to_customer(customer_id):

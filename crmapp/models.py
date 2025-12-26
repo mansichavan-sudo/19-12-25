@@ -1016,25 +1016,73 @@ from django.utils import timezone
 from django.db import models
 from crmapp.models import customer_details, Product
 
+from django.db import models
+from crmapp.models import customer_details, Product
 
-# ---------------- PURCHASE HISTORY MODEL ----------------
+
 class PurchaseHistory(models.Model):
+    """
+    RAW purchase transaction table.
+    This table should NEVER be used directly for ML training.
+    It is the source of truth for all purchases.
+    """
+
+    # -------------------------
+    # ENUMS
+    # -------------------------
     INVOICE_TYPES = (
         ("NORMAL", "Normal Invoice"),
         ("TAX_INVOICE", "Tax Invoice"),
     )
 
-    customer = models.ForeignKey(customer_details, on_delete=models.CASCADE)
+    PURCHASE_TYPES = (
+        ("PRODUCT", "Product"),
+        ("SERVICE", "Service"),
+    )
 
-    # For normal invoice (FK present)
-    product = models.ForeignKey(Product, on_delete=models.SET_NULL, null=True, blank=True)
+    # -------------------------
+    # CORE RELATIONSHIPS
+    # -------------------------
+    customer = models.ForeignKey(
+        customer_details,
+        on_delete=models.CASCADE,
+        related_name="purchase_history"
+    )
 
-    # For tax invoice (no product FK available)
-    product_name = models.CharField(max_length=255, null=True, blank=True)
+    # Product FK (present for normal invoices)
+    product = models.ForeignKey(
+        Product,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="purchase_history"
+    )
 
-    quantity = models.DecimalField(max_digits=10, decimal_places=2, default=1)
-    total_amount = models.DecimalField(max_digits=10, decimal_places=2)
+    # Product / Service name fallback (TAX invoices, legacy data)
+    # ⚠️ DISPLAY ONLY — NEVER USE FOR ML
+    product_name = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True
+    )
 
+    # -------------------------
+    # PURCHASE METRICS
+    # -------------------------
+    quantity = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        default=1
+    )
+
+    total_amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2
+    )
+
+    # -------------------------
+    # INVOICE LINKS
+    # -------------------------
     invoice = models.ForeignKey(
         'Invoice',
         on_delete=models.SET_NULL,
@@ -1042,6 +1090,7 @@ class PurchaseHistory(models.Model):
         blank=True,
         related_name="purchase_history"
     )
+
     tax_invoice = models.ForeignKey(
         'TaxInvoice',
         on_delete=models.SET_NULL,
@@ -1050,16 +1099,91 @@ class PurchaseHistory(models.Model):
         related_name="purchase_history"
     )
 
-    invoice_type = models.CharField(max_length=20, choices=INVOICE_TYPES, default="NORMAL")
-    purchased_at = models.DateTimeField(auto_now_add=True)
+    invoice_type = models.CharField(
+        max_length=20,
+        choices=INVOICE_TYPES,
+        default="NORMAL"
+    )
 
-    customer_ref = models.BigIntegerField(null=True, blank=True)
-    customer_int = models.IntegerField(null=True, blank=True)
+    # -------------------------
+    # PURCHASE CLASSIFICATION (CRITICAL FOR ML)
+    # -------------------------
+    purchase_type = models.CharField(
+        max_length=10,
+        choices=PURCHASE_TYPES,
+        default="PRODUCT",
+        db_index=True
+    )
 
+    # -------------------------
+    # TIMESTAMPS
+    # -------------------------
+    purchased_at = models.DateTimeField(
+        auto_now_add=True,
+        db_index=True
+    )
+
+    # -------------------------
+    # LEGACY / ERP SUPPORT (NOT FOR ML)
+    # -------------------------
+    customer_ref = models.BigIntegerField(
+        null=True,
+        blank=True,
+        help_text="Legacy external customer reference (DO NOT use for ML)"
+    )
+
+    customer_int = models.IntegerField(
+        null=True,
+        blank=True,
+        help_text="Legacy integer customer id (DO NOT use for ML)"
+    )
+
+    # -------------------------
+    # META
+    # -------------------------
+    class Meta:
+        ordering = ["-purchased_at"]
+        indexes = [
+            models.Index(fields=["customer", "purchased_at"]),
+            models.Index(fields=["purchase_type"]),
+            models.Index(fields=["product"]),
+        ]
+
+    # -------------------------
+    # STRING REPRESENTATION
+    # -------------------------
+    def __str__(self):
+        title = (
+            self.product.product_name
+            if self.product
+            else self.product_name or "Unknown Item"
+        )
+        return f"{self.customer.fullname} | {title} | ₹{self.total_amount}"
+
+    # -------------------------
+    # SAFE HELPERS (OPTIONAL)
+    # -------------------------
+    @property
+    def is_product(self):
+        return self.purchase_type == "PRODUCT"
+
+    @property
+    def is_service(self):
+        return self.purchase_type == "SERVICE"
+
+
+class ProductAlias(models.Model):
+    alias_name = models.CharField(max_length=255, unique=True)
+    product = models.ForeignKey(Product, on_delete=models.CASCADE)
+    confidence = models.DecimalField(max_digits=3, decimal_places=2, default=1.0)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["alias_name"]),
+        ]
 
     def __str__(self):
-        title = self.product.product_name if self.product else self.product_name
-        return f"{self.customer.fullname} - {title}"
+        return f"{self.alias_name} → {self.product.product_name}"
 
 
 from datetime import timedelta
@@ -1101,6 +1225,8 @@ class ServiceCatalog(models.Model):
     service_id = models.AutoField(primary_key=True)
     service_name = models.CharField(max_length=255)
     service_category = models.CharField(max_length=100, null=True, blank=True)
+    base_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
+    active = models.BooleanField(default=True)  
 
     class Meta:
         db_table = "service_catalog"

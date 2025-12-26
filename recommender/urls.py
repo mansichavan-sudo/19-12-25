@@ -6,7 +6,13 @@ from .api import recommend_products
 from . import api_recommend
 from .views_purchase_history import get_purchase_history
 from .views_pest_recommendations import get_pest_recommendations
+from recommender.api_recommend import recommendation_api
+from .views import recommendation_ui, recommendations_view
 
+
+
+from recommender.views import hybrid_recommendations_api,served_recommendations,served_product_recommendations,served_service_recommendations ,customer_recommendations,customer_message_api,customer_reply_api,regenerate_service_view, generate_message
+from recommender.api_feedback import recommendation_feedback
 # API Views
 from .views import (
     api_ai_personalized,
@@ -34,6 +40,7 @@ urlpatterns = [
     # 🌐 MAIN UI PAGES
     # ======================================
     path('ui/', views.recommendation_ui, name='recommendation_ui'),
+  
     path('dashboard/', views.recommendation_dashboard, name='recommendation_dashboard'),
     path('message-logs/', views.message_log_view, name='message_log_view'),
 
@@ -191,7 +198,65 @@ path("recommend/", recommend_products, name="recommend-products"),
      path(
     "api/service-history/<int:customer_id>/",
     service_purchase_history
-)
+),
+
+    path("api/recommendations/", recommendation_api, name="recommendations"),
+       path(
+        "hybrid/<int:customer_id>/",
+        hybrid_recommendations_api,
+        name="hybrid-recommendations",
+    ), 
+       path(
+        'api/recommendations/<str:customer_id>/',
+        served_recommendations,
+        name='served_recommendations'
+    ),
+
+    # ✅ Debug / internal (optional)
+    path(
+        'api/recommendations/all/<str:customer_id>/',
+        get_recommendations,
+        name='get_recommendations'
+    ),
+    path('api/recommendations/<str:customer_id>/', served_recommendations),
+    path('api/recommendations/products/<str:customer_id>/', served_product_recommendations),
+    path('api/recommendations/services/<str:customer_id>/', served_service_recommendations),
+    path("recommendations/feedback/", recommendation_feedback),
+
+     path(
+        'api/recommendations/<int:customer_id>/',
+        customer_recommendations,
+        name='customer_recommendations'
+    ),
+
+ 
+    path(
+        "customer-message/<str:customer_code>/",
+        customer_message_api,
+        name="customer_message_api"
+    ),
+
+   
+
+    path(
+        "customer-message/<str:customer_code>/",
+        views.customer_message_view,
+        name="customer_message"
+    ),
+
+     path("api/customer-reply/", customer_reply_api),
+
+        path(
+        "recommendations/views/<str:customer_code>/",
+        views.recommendations_view_part,
+        name="recommendations"
+    ),
+
+    path(
+    "api/recommendations/regenerate/services/<int:customer_id>/",
+    regenerate_service_view
+),
+path("generate-message/<int:customer_id>/", generate_message),
 
 
 

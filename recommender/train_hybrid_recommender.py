@@ -1,126 +1,84 @@
-import numpy as np
 import pandas as pd
-import mysql.connector
-import pickle
-import os
-from django.conf import settings
+import numpy as np
+from sqlalchemy import create_engine
+from sklearn.preprocessing import MinMaxScaler
+from sklearn.metrics.pairwise import cosine_similarity
+import joblib
 
+# -----------------------------
+# DB CONNECTION
+# -----------------------------
+engine = create_engine(
+    "mysql+pymysql://root:root@localhost:3306/teim1"
+)
 
-# =====================================================
-# DB FETCHING
-# =====================================================
-def fetch_dataset():
-    db = mysql.connector.connect(
-        host="localhost",
-        user="root",
-        password="root",
-        database="teim1"
-    )
-    cursor = db.cursor(dictionary=True)
+# -----------------------------
+# LOAD DATA
+# -----------------------------
+purchase_df = pd.read_sql("""
+    SELECT customer_id, category, item_type
+    FROM crmapp_purchase_history_ml
+    WHERE item_type='service'
+      AND category IS NOT NULL
+""", engine)
 
-    cursor.execute("""
-        SELECT 
-            ph.customer_id,
-            ph.product_name,
-            SUM(ph.quantity) AS total_qty
-        FROM crmapp_purchasehistory ph
-        GROUP BY ph.customer_id, ph.product_name
-    """)
+customer_features = pd.read_sql("""
+    SELECT * FROM vw_ml_customer_features
+""", engine)
 
-    rows = cursor.fetchall()
-    db.close()
+service_popularity = pd.read_sql("""
+    SELECT * FROM vw_ml_service_popularity
+""", engine)
 
-    if not rows:
-        raise ValueError("No dataset from purchase history")
+# -----------------------------
+# INTERACTION MATRIX
+# -----------------------------
+interaction = (
+    purchase_df
+    .groupby(['customer_id', 'category'])
+    .size()
+    .reset_index(name='count')
+)
 
-    df = pd.DataFrame(rows)
-    df.rename(columns={"total_qty": "rating"}, inplace=True)
+pivot = interaction.pivot_table(
+    index='customer_id',
+    columns='category',
+    values='count',
+    fill_value=0
+)
 
-    # Normalize quantity into a rating scale 1–5
-    df["rating"] = df["rating"].clip(1, 5)
+# -----------------------------
+# COSINE SIMILARITY
+# -----------------------------
+similarity_matrix = cosine_similarity(pivot)
+similarity_df = pd.DataFrame(
+    similarity_matrix,
+    index=pivot.index,
+    columns=pivot.index
+)
 
-    return df
+# -----------------------------
+# NORMALIZE CUSTOMER FEATURES
+# -----------------------------
+scaler = MinMaxScaler()
+customer_features_scaled = customer_features.copy()
 
+customer_features_scaled[
+    ['total_purchases', 'services_taken', 'products_bought', 'amc_count']
+] = scaler.fit_transform(
+    customer_features[
+        ['total_purchases', 'services_taken', 'products_bought', 'amc_count']
+    ]
+)
 
-# =====================================================
-# SVD TRAINING (Custom — No Surprise Required)
-# =====================================================
-def train_svd(df, k=20, lr=0.005, reg=0.02, epochs=25):
-    """
-    Basic matrix factorization using gradient descent.
-    df requires: customer_id, product_name, rating
-    """
+# -----------------------------
+# SAVE MODEL ARTIFACTS
+# -----------------------------
+joblib.dump({
+    "pivot": pivot,
+    "similarity": similarity_df,
+    "customer_features": customer_features_scaled,
+    "service_popularity": service_popularity
+}, "hybrid_recommender.pkl")
 
-    # Encode IDs
-    df["uid"] = df["customer_id"].astype("category").cat.codes
-    df["pid"] = df["product_name"].astype("category").cat.codes
-
-    n_users = df["uid"].nunique()
-    n_items = df["pid"].nunique()
-
-    # Mappings for prediction later
-    user_map = dict(zip(df["uid"], df["customer_id"]))
-    product_map = dict(zip(df["pid"], df["product_name"]))
-
-    # Initialize Latent Matrices
-    P = np.random.normal(scale=1./k, size=(n_users, k))
-    Q = np.random.normal(scale=1./k, size=(n_items, k))
-
-    # Training Loop
-    for epoch in range(epochs):
-        for _, row in df.iterrows():
-            u = int(row["uid"])
-            i = int(row["pid"])
-            r = row["rating"]
-
-            prediction = np.dot(P[u], Q[i])
-            error = r - prediction
-
-            # Gradient update
-            P[u] += lr * (error * Q[i] - reg * P[u])
-            Q[i] += lr * (error * P[u] - reg * Q[i])
-
-        print(f"Epoch {epoch+1}/{epochs} completed")
-
-    return P, Q, user_map, product_map
-
-
-# =====================================================
-# SAVE MODEL
-# =====================================================
-def save_model(model):
-    model_path = os.path.join(
-        settings.BASE_DIR,
-        "recommender",
-        "trained_models",
-        "hybrid_recommender.pkl"
-    )
-    os.makedirs(os.path.dirname(model_path), exist_ok=True)
-
-    with open(model_path, "wb") as f:
-        pickle.dump(model, f)
-
-    print(f"✅ Hybrid SVD Model Saved at {model_path}")
-
-
-# =====================================================
-# MAIN TRAIN FUNCTION
-# =====================================================
-def train_hybrid():
-    print("📥 Loading dataset from MySQL...")
-    df = fetch_dataset()
-
-    print("🔧 Training SVD model...")
-    P, Q, user_map, product_map = train_svd(df)
-
-    model = {
-        "P": P,
-        "Q": Q,
-        "user_map": user_map,
-        "product_map": product_map
-    }
-
-    save_model(model)
-    print("🎉 Training completed!")
-
-    return model
+print("✅ Hybrid recommender model trained & saved")

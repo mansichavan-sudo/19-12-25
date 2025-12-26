@@ -168,9 +168,10 @@
             <!-- ============================
                  UPSALE + CROSS-SALE BUTTONS
             ============================= -->
-            <div class="d-flex gap-3 mt-3">
+            <div class="d-flex gap-3 mt-3"> 
                 <button class="btn btn-primary w-50" onclick="getUpsell()">Get Upsell</button>
-                <button class="btn btn-warning w-50" onclick="getCrosssell()">Get Cross-Sell</button>
+<button class="btn btn-warning w-50" onclick="getCrosssell()">Get Cross-Sell</button>
+
             </div>
 
             <!-- RESULT PANELS -->
@@ -226,13 +227,37 @@ document.addEventListener("DOMContentLoaded", () => {
 /* --------------------------------------------------
    TEMPLATE RENDERING
 -------------------------------------------------- */
-{% verbatim %}
+{% verbatim %}  
 function renderTemplate(text, data) {
+
+    const topProduct =
+        data.products?.[0]?.product_name || "";
+
+    const productList = (data.products || [])
+        .map(p => `• ${p.product_name}`)
+        .join("\n");
+
+    const serviceList = (data.services || [])
+        .map(s => `• ${s.service_name}`)
+        .join("\n");
+
     return text
+        // Old placeholders (BACKWARD COMPATIBLE)
+        .replace(/{{\s*product\s*}}/gi, data.context_product || topProduct)
+        .replace(/{{\s*recommended_product\s*}}/gi, topProduct)
+
+        // New placeholders (MULTI ITEM)
+        .replace(/{{\s*recommended_products\s*}}/gi, productList || "—")
+        .replace(/{{\s*recommended_services\s*}}/gi, serviceList || "—")
+
+        // Common
         .replace(/{{\s*customer_name\s*}}/gi, data.customer_name || "")
-        .replace(/{{\s*recommended_product\s*}}/gi, data.recommended_product || "")
-        .replace(/{{\s*product\s*}}/gi, data.recommended_product || "");
+        .replace(/{{\s*intent\s*}}/gi, data.intent || "")
+        .replace(/{{\s*service_date\s*}}/gi, data.service_date || "")
+        .replace(/{{\s*amount_due\s*}}/gi, data.amount_due || "")
+        .replace(/{{\s*due_date\s*}}/gi, data.due_date || "");
 }
+
 {% endverbatim %}
 
 /* --------------------------------------------------
@@ -486,67 +511,76 @@ function loadCustomerContract(code) {
                 <strong>Service ID:</strong> ${d.service_id}
             `;
         });
-}
+} 
 
+
+function renderReco(data, targetId, title) {
+    let html = `<div class="card mt-3"><div class="card-body">
+        <h5>${title}</h5>`;
+
+    // PRODUCTS
+    html += `<h6>🛒 Product Recommendations</h6><ul>`;
+    if (data.products.length === 0) {
+        html += `<li>No product recommendations</li>`;
+    } else {
+        data.products.forEach(p => {
+            html += `<li>
+                <strong>${p.product_name}</strong>
+                (Confidence ${p.confidence})
+            </li>`;
+        });
+    }
+    html += `</ul>`;
+
+    // SERVICES
+    html += `<h6>🛠 Service Recommendations</h6><ul>`;
+    if (data.services.length === 0) {
+        html += `<li>No service recommendations</li>`;
+    } else {
+        data.services.forEach(s => {
+            html += `<li>
+                <strong>${s.service_name}</strong>
+                (Confidence ${s.confidence})
+            </li>`;
+        });
+    }
+    html += `</ul></div></div>`;
+
+    document.getElementById(targetId).innerHTML = html;
+}
+ 
+/* --------------------------------------------------
+   UPSSELL
+-------------------------------------------------- */ 
 async function getUpsell() {
     const dropdown = document.getElementById("customerDropdown");
-    const upsellResult = document.getElementById("upsellResult");
+    const resultBox = document.getElementById("upsellResult");
 
     if (!dropdown.value) {
         alert("Select customer first!");
         return;
     }
 
-    const customerId = dropdown.selectedOptions[0].dataset.customerid;
+    const customerCode = dropdown.selectedOptions[0].dataset.customerid;
 
-    upsellResult.style.display = "block";
-    upsellResult.innerHTML = "Loading upsell recommendations...";
+    resultBox.style.display = "block";
+    resultBox.innerHTML = "Loading upsell recommendations...";
 
     try {
-        const res = await fetch(`/api/recommendations/upsell/${customerId}/`);
+        const res = await fetch(`/api/recommendations/upsell/${customerCode}/`);
         const data = await res.json();
 
-        if ((!data.products?.length) && (!data.services?.length)) {
-            upsellResult.innerHTML = "<strong>No upsell recommendations found.</strong>";
-            return;
-        }
+        // 🔥 STORE FOR MESSAGE TEMPLATE
+        lastRecommendations = {
+            intent: "upsell",
+            products: data.products || [],
+            services: data.services || []
+        };
 
-        let html = `<div class="result-title">Upsell Recommendations</div>`;
-
-        /* 🟦 PRODUCTS FIRST */
-        if (data.products?.length) {
-            html += `<h6 class="mt-3">🛒 Product Recommendations</h6><ul>`;
-            data.products.forEach(p => {
-                html += `
-                    <li>
-                        <strong>${p.name}</strong>
-                        <span class="text-muted">
-                            (₹${p.average_price || "N/A"} · Confidence ${p.confidence})
-                        </span>
-                    </li>`;
-            });
-            html += `</ul>`;
-        }
-
-        /* 🟩 SERVICES AFTER */
-        if (data.services?.length) {
-            html += `<h6 class="mt-3">🛠 Service Recommendations</h6><ul>`;
-            data.services.forEach(s => {
-                html += `
-                    <li>
-                        <strong>${s.name}</strong>
-                        <span class="text-muted">
-                            (Confidence ${s.confidence})
-                        </span>
-                    </li>`;
-            });
-            html += `</ul>`;
-        }
-
-        upsellResult.innerHTML = html;
+        renderRecoSafe(data, resultBox, "Upsell Recommendations");
 
     } catch (err) {
-        upsellResult.innerHTML =
+        resultBox.innerHTML =
             `<span class="text-danger">Failed to load upsell recommendations.</span>`;
     }
 }
@@ -560,53 +594,23 @@ async function getCrosssell() {
         return;
     }
 
-    const customerId = dropdown.selectedOptions[0].dataset.customerid;
+    const customerCode = dropdown.selectedOptions[0].dataset.customerid;
 
     resultBox.style.display = "block";
     resultBox.innerHTML = "Loading cross-sell recommendations...";
 
     try {
-        const res = await fetch(`/api/recommendations/crosssell/${customerId}/`);
+        const res = await fetch(`/api/recommendations/crosssell/${customerCode}/`);
         const data = await res.json();
 
-        if ((!data.products?.length) && (!data.services?.length)) {
-            resultBox.innerHTML = "<strong>No cross-sell recommendations found.</strong>";
-            return;
-        }
+        // 🔥 STORE FOR MESSAGE TEMPLATE
+        lastRecommendations = {
+            intent: "crosssell",
+            products: data.products || [],
+            services: data.services || []
+        };
 
-        let html = `<div class="result-title">Cross-Sell Recommendations</div>`;
-
-        /* 🟦 PRODUCTS FIRST */
-        if (data.products?.length) {
-            html += `<h6 class="mt-3">🛒 Product Recommendations</h6><ul>`;
-            data.products.forEach(p => {
-                html += `
-                    <li>
-                        <strong>${p.name}</strong>
-                        <span class="text-muted">
-                            (Confidence ${p.confidence})
-                        </span>
-                    </li>`;
-            });
-            html += `</ul>`;
-        }
-
-        /* 🟩 SERVICES AFTER */
-        if (data.services?.length) {
-            html += `<h6 class="mt-3">🛠 Service Recommendations</h6><ul>`;
-            data.services.forEach(s => {
-                html += `
-                    <li>
-                        <strong>${s.name}</strong>
-                        <span class="text-muted">
-                            (Confidence ${s.confidence})
-                        </span>
-                    </li>`;
-            });
-            html += `</ul>`;
-        }
-
-        resultBox.innerHTML = html;
+        renderRecoSafe(data, resultBox, "Cross-Sell Recommendations");
 
     } catch (err) {
         resultBox.innerHTML =
@@ -616,29 +620,103 @@ async function getCrosssell() {
 
 
 /* --------------------------------------------------
+   CROSS SELL
+-------------------------------------------------- */
+async function getCrosssell() {
+    const dropdown = document.getElementById("customerDropdown");
+    const resultBox = document.getElementById("crosssellResult");
+
+    if (!dropdown.value) {
+        alert("Select customer first!");
+        return;
+    }
+
+    const customerCode = dropdown.selectedOptions[0].dataset.customerid;
+
+    resultBox.style.display = "block";
+    resultBox.innerHTML = "Loading cross-sell recommendations...";
+
+    try {
+        const res = await fetch(`/api/recommendations/crosssell/${customerCode}/`);
+        const data = await res.json();
+
+        renderRecoSafe(data, resultBox, "Cross-Sell Recommendations");
+
+    } catch (err) {
+        console.error(err);
+        resultBox.innerHTML =
+            `<span class="text-danger">Failed to load cross-sell recommendations.</span>`;
+    }
+}
+
+function renderRecoSafe(data, container, title) {
+
+    const products = data.products || [];
+    const services = data.services || [];
+
+    let html = `<div class="result-title">${title}</div>`;
+
+    /* PRODUCTS */
+    html += `<h6 class="mt-3">🛒 Product Recommendations</h6><ul>`;
+    if (products.length === 0) {
+        html += `<li class="text-muted">No product recommendations</li>`;
+    } else {
+        products.forEach(p => {
+            html += `
+                <li>
+                    <strong>${p.product_name}</strong>
+                    <span class="text-muted">(Confidence ${p.confidence})</span>
+                </li>`;
+        });
+    }
+    html += `</ul>`;
+
+    /* SERVICES */
+    html += `<h6 class="mt-3">🛠 Service Recommendations</h6><ul>`;
+    if (services.length === 0) {
+        html += `<li class="text-muted">No service recommendations</li>`;
+    } else {
+        services.forEach(s => {
+            html += `
+                <li>
+                    <strong>${s.service_name}</strong>
+                    <span class="text-muted">(Confidence ${s.confidence})</span>
+                </li>`;
+        });
+    }
+    html += `</ul>`;
+
+    container.innerHTML = html;
+}
+
+
+/* --------------------------------------------------
    TEMPLATE SELECTION
 -------------------------------------------------- */
 document.getElementById("messageTemplate").addEventListener("change", function () {
 
     const opt = this.selectedOptions[0];
+    if (!opt) return;
 
     const body = opt.dataset.body || "";
     const subject = opt.dataset.subject || "";
     const type = opt.dataset.type;
 
-    const customerName =
-        document.getElementById("customerDropdown")
-        .selectedOptions[0]?.text || "";
+    const customerOpt =
+        document.getElementById("customerDropdown").selectedOptions[0];
 
-    let recommendedProduct = "";
-    const rec = document.querySelector("#personalized-result .alert-info");
-    if (rec) recommendedProduct = rec.textContent.replace("Recommended Product:", "").trim();
+    const customerName = customerOpt
+        ? customerOpt.dataset.fullname
+        : "";
 
-    document.getElementById("messagePreview").value =
-        renderTemplate(body, {
-            customer_name: customerName,
-            recommended_product: recommendedProduct
-        });
+    const rendered = renderTemplate(body, {
+        customer_name: customerName,
+        intent: lastRecommendations.intent,
+        products: lastRecommendations.products,
+        services: lastRecommendations.services
+    });
+
+    document.getElementById("messagePreview").value = rendered;
 
     if (type === "email") {
         document.getElementById("emailSubjectDiv").style.display = "block";

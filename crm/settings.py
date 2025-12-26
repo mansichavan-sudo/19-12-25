@@ -220,3 +220,20 @@ RAPBOOSTER_API_URL = "https://api.rapbooster.com/v1/send"
 RAPBOOSTER_API_KEY = "6538c8eff027d41e9151"
 
 #FAST2SMS_API_KEY = "lmECgGI0f57i2x94H81uqVtTyObKhzFZMNLXA3oapseB6RQcJD5ZsIrukQRLzoCcKHWaBF6TliSXdUgA"
+
+
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "console": {"class": "logging.StreamHandler"},
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
+    },
+}
+
+
+
+my_api_key_gemini = 'AIzaSyB-UzFq5OgZ-Ys1BnRjR-tr2eaEjf19lIU'

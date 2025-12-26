@@ -1265,3 +1265,85 @@ def generate_full_recommendations(customer_id, top_n=10):
         "total_recommendations": len(final_results),
         "results": final_results
     }
+
+
+
+import pickle
+import os
+import pandas as pd
+
+MODEL_PATH = os.path.join(
+    "recommender", "trained_models", "cf_model.pkl"
+)
+
+with open(MODEL_PATH, "rb") as f:
+    CF_MODEL = pickle.load(f)
+
+
+def recommend_cf(customer_id, top_n=5, min_similarity=0.05):
+    """
+    Correct CF inference using:
+    score(item) = Σ(sim(u,v) × interaction(v,item)) / Σ(sim(u,v))
+    """
+
+    user_item = CF_MODEL["user_item_matrix"]
+    sim_df = CF_MODEL["similarity_df"]
+
+    # Cold-start user
+    if customer_id not in user_item.index:
+        return []
+
+    # Similar users
+    similarities = sim_df.loc[customer_id].drop(customer_id)
+    similarities = similarities[similarities > min_similarity]
+
+    if similarities.empty:
+        return []
+
+    # Weighted item scores
+    weighted_scores = (
+        user_item.loc[similarities.index]
+        .T.dot(similarities)
+        / similarities.sum()
+    )
+
+    # Remove already purchased items
+    purchased = user_item.loc[customer_id]
+    weighted_scores = weighted_scores[purchased == 0]
+
+    # Top-N
+    top_items = weighted_scores.sort_values(ascending=False).head(top_n)
+
+    return [
+        {
+            "product_id": int(pid),
+            "score": float(score),
+            "method": "cf"
+        }
+        for pid, score in top_items.items()
+    ]
+
+
+# recommender/recommender_engine.py 
+
+from recommender.cf_engine import cf_recommendations
+from recommender.rules import rule_based_recommendations
+from recommender.service_upsell import service_upsell_rules
+from recommender.utils import is_cf_eligible
+
+
+def recommend(customer_id, k=5):
+
+    # Services always evaluated
+    service_recs = service_upsell_rules(customer_id)
+
+    # Products
+    if is_cf_eligible(customer_id):
+        product_recs = cf_recommendations(customer_id, k)
+    else:
+        product_recs = rule_based_recommendations(customer_id)
+
+    return {
+        "products": product_recs,
+        "services": service_recs
+    }

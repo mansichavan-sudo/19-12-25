@@ -43,6 +43,8 @@ from django.shortcuts import get_object_or_404
 from crmapp.models import customer_details, MessageTemplates, SentMessageLog , CustomerContract
 from .ml_service import get_recommendations_for_customer
 import traceback
+from recommender.engine import cf_get_recommendations
+
  
 
 
@@ -171,159 +173,96 @@ from django.db.models import Avg, Max, DecimalField
 from django.db.models.functions import Coalesce
 from crmapp.models import customer_details, ServiceProduct
 from recommender.models import PestRecommendation
+
+
+from django.http import JsonResponse
+from recommender.models import PestRecommendation
  
+
+def _serialize_recommendations(qs):
+    products = []
+    services = []
+
+    for r in qs:
+        if r.reco_channel == "product" and r.recommended_product:
+            products.append({
+                "product_id": r.recommended_product.id,
+                "product_name": r.recommended_product.product_name,
+                "confidence": round(r.confidence, 3),
+            })
+
+        if r.reco_channel == "service" and r.recommended_service:
+            services.append({
+                "service_id": r.recommended_service.id,
+                "service_name": r.recommended_service.service_name,
+                "confidence": round(r.confidence, 3),
+            })
+
+    return {
+        "products": products,
+        "services": services,
+    }
+
+
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+from recommender.models import PestRecommendation
+from crmapp.models import customer_details
+
+
+from django.http import JsonResponse
+from django.shortcuts import get_object_or_404
+ 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
+def _safe_response(products, services):
+    """
+    Guarantees frontend-safe structure
+    """
+    return {
+        "products": products if isinstance(products, list) else [],
+        "services": services if isinstance(services, list) else [],
+    }
 
 
 def upsell_view(request, customer_id):
-    """
-    customer_id here = customerid (e.g. UDAKAL4374)
-    """
 
-    # 🔹 STEP 1: Resolve customerid → BIGINT id
-    try:
-        customer = customer_details.objects.get(customerid=customer_id)
-    except customer_details.DoesNotExist:
-        return JsonResponse({
-            "status": "error",
-            "message": "Customer not found"
-        }, status=404)
+    if customer_id == "ALL":
+        customer_pk = "ALL"
+    else:
+        customer = get_object_or_404(customer_details, customerid=customer_id)
+        customer_pk = customer.id
 
-    # ===============================
-    # ---------- PRODUCTS ----------
-    # ===============================
-    product_qs = (
-        PestRecommendation.objects
-        .filter(
-            customer=customer,             # ✅ FIX
-            recommendation_type="upsell",
-            recommended_product__isnull=False
-        )
-        .values(
-            "recommended_product__product_id",
-            "recommended_product__product_name"
-        )
-        .annotate(confidence=Max("confidence_score"))
-        .order_by("-confidence")[:7]
-    )
-
-    products = []
-    for p in product_qs:
-        avg_price = (
-            ServiceProduct.objects
-            .filter(product_id=p["recommended_product__product_id"])
-            .aggregate(
-                avg=Coalesce(
-                    Avg("price"),
-                    0,
-                    output_field=DecimalField(max_digits=10, decimal_places=2)
-                )
-            )["avg"]
-        )
-
-        products.append({
-            "id": p["recommended_product__product_id"],
-            "name": p["recommended_product__product_name"],
-            "confidence": float(p["confidence"]),
-            "average_price": float(round(avg_price, 2))
-        })
-
-    # ===============================
-    # ---------- SERVICES ----------
-    # ===============================
-    service_qs = (
-        PestRecommendation.objects
-        .filter(
-            customer=customer,             # ✅ FIX
-            recommendation_type="upsell",
-            recommended_service__isnull=False
-        )
-        .values(
-            "recommended_service__service_id",
-            "recommended_service__service_name"
-        )
-        .annotate(confidence=Max("confidence_score"))
-        .order_by("-confidence")[:3]
-    )
-
-    services = [
-        {
-            "id": s["recommended_service__service_id"],
-            "name": s["recommended_service__service_name"],
-            "confidence": float(s["confidence"])
-        }
-        for s in service_qs
-    ]
+    products, services = get_recommendations(customer_pk, "upsell")
 
     return JsonResponse({
         "status": "success",
+        "intent": "upsell",
+        "scope": "global" if customer_pk == "ALL" else "customer",
         "products": products,
         "services": services
     })
-
-from django.http import JsonResponse
-from django.db.models import Max
-from django.shortcuts import get_object_or_404
-from crmapp.models import customer_details 
-from .models import PestRecommendation
-
 
 def crosssell_view(request, customer_id):
-    customer = customer_details.objects.get(customerid=customer_id)
 
-    product_qs = (
-        PestRecommendation.objects
-        .filter(
-            customer=customer,
-            recommendation_type="crosssell",
-            recommended_product__isnull=False
-        )
-        .values(
-            "recommended_product__product_id",
-            "recommended_product__product_name"
-        )
-        .annotate(confidence=Max("confidence_score"))
-        .order_by("-confidence")[:7]
-    )
+    if customer_id == "ALL":
+        customer_pk = "ALL"
+    else:
+        customer = get_object_or_404(customer_details, customerid=customer_id)
+        customer_pk = customer.id
 
-    products = [
-        {
-            "id": p["recommended_product__product_id"],
-            "name": p["recommended_product__product_name"],
-            "confidence": float(p["confidence"])
-        }
-        for p in product_qs
-    ]
-
-    service_qs = (
-        PestRecommendation.objects
-        .filter(
-            customer=customer,
-            recommendation_type="crosssell",
-            recommended_service__isnull=False
-        )
-        .values(
-            "recommended_service__service_id",
-            "recommended_service__service_name"
-        )
-        .annotate(confidence=Max("confidence_score"))
-        .order_by("-confidence")[:3]
-    )
-
-    services = [
-        {
-            "id": s["recommended_service__service_id"],
-            "name": s["recommended_service__service_name"],
-            "confidence": float(s["confidence"])
-        }
-        for s in service_qs
-    ]
+    products, services = get_recommendations(customer_pk, "crosssell")
 
     return JsonResponse({
         "status": "success",
+        "intent": "crosssell",
+        "scope": "global" if customer_pk == "ALL" else "customer",
         "products": products,
         "services": services
     })
-
 
 # ============================================================
 # 6️⃣ FINAL DASHBOARD TABLE (CRM)
@@ -335,14 +274,25 @@ from django.core.paginator import Paginator
 from django.db import connection
 from django.shortcuts import render
 
+from django.core.paginator import Paginator
+from django.db import connection
+from django.shortcuts import render
+ 
+from django.core.paginator import Paginator
+from django.db import connection
+from django.shortcuts import render
+from django.core.paginator import Paginator
+from django.db import connection
+from django.shortcuts import render
+
 
 def recommendation_dashboard(request):
     filter_type = (request.GET.get("type") or "").strip().lower()
+    algo = (request.GET.get("algo") or "").strip().lower()
     search = (request.GET.get("search") or "").strip()
 
     sql = """
         SELECT
-            pr.id,
             pr.customer_id,
             c.fullname,
             c.primarycontact,
@@ -364,7 +314,8 @@ def recommendation_dashboard(request):
             sc.service_name AS recommended_service,
 
             COALESCE(rp.category, sc.service_category) AS category,
-            pr.recommendation_type,
+            pr.business_intent,
+            pr.algorithm_strategy,
             pr.confidence_score
 
         FROM pest_recommendations pr
@@ -399,15 +350,22 @@ def recommendation_dashboard(request):
         LEFT JOIN service_catalog sc
             ON sc.service_id = pr.recommended_service_id
 
-        WHERE 1 = 1
+        WHERE pr.is_active = 1
     """
 
     params = []
 
+    # ✅ Business Intent filter (Upsell / Crosssell / Retention)
     if filter_type:
-        sql += " AND pr.recommendation_type = %s"
+        sql += " AND pr.business_intent = %s"
         params.append(filter_type)
 
+    # ✅ Algorithm filter (content / collaborative / demographic)
+    if algo:
+        sql += " AND pr.algorithm_strategy = %s"
+        params.append(algo)
+
+    # ✅ Search filter
     if search:
         sql += """
             AND (
@@ -427,22 +385,23 @@ def recommendation_dashboard(request):
         rows = cursor.fetchall()
 
     recommendations = [{
-        "customer_id": r[1],
-        "customer_name": r[2],
-        "phone": r[3],
-        "email": r[4],
-        "address": r[5] or "—",
+        "customer_id": r[0],
+        "customer_name": r[1],
+        "phone": r[2],
+        "email": r[3],
+        "address": r[4] or "—",
 
-        "purchase_product": r[6] or "—",
-        "quantity": r[7] or "—",
-        "price": float(r[8]) if r[8] else "—",
-        "purchase_date": r[9],
+        "purchase_product": r[5] or "—",
+        "quantity": r[6] or "—",
+        "price": float(r[7]) if r[7] else "—",
+        "purchase_date": r[8],
 
-        "recommended_product": r[10] or "—",
-        "recommended_service": r[11] or "—",
+        "recommended_product": r[9] or "—",
+        "recommended_service": r[10] or "—",
 
-        "category": r[12] or "—",
-        "recommendation_type": r[13],
+        "category": r[11] or "—",
+        "business_intent": r[12],
+        "algorithm_strategy": r[13],   # ✅ FIXED KEY NAME
         "confidence_score": float(r[14]) if r[14] else 0,
     } for r in rows]
 
@@ -451,10 +410,11 @@ def recommendation_dashboard(request):
 
     return render(request, "recommender/recommendation_dashboard.html", {
         "page_obj": page_obj,
-        "recommendations": page_obj,   # IMPORTANT
         "filter_type": filter_type,
+        "algo": algo,
         "search": search,
     })
+
 
 # ============================================================
 # 7️⃣ GET ALL PRODUCTS
@@ -866,16 +826,7 @@ def generate_recommendations(customerid):
         "final_recommendations": combined
     }
 
-
-def get_recommendations(request, customerid):
-    try:
-        results = generate_recommendations(customerid)
-        return JsonResponse(results, safe=False)
-
-    except Exception as e:
-        return JsonResponse({"error": str(e)}, status=500)    
-
-
+ 
 
 from django.db.models import Max
 from crmapp.models import customer_details, PurchaseHistory
@@ -1720,40 +1671,8 @@ def get_user_history(customer_id):
 
 # ---------------------------------------------------------
 # Main Recommendation API
-# ---------------------------------------------------------
-def get_recommendations(request, customer_id):
+# --------------------------------------------------------- 
 
-    # Validate customer_id
-    try:
-        customer_id = int(customer_id)
-    except ValueError:
-        return JsonResponse({"error": "Invalid customer_id"}, status=400)
-
-    # Check if model loaded
-    if model is None:
-        return JsonResponse({"error": "Model not loaded"}, status=500)
-
-    # Fetch history
-    history = get_user_history(customer_id)
-
-    # If user has no history
-    if not history:
-        return JsonResponse({
-            "customer_id": customer_id,
-            "recommended_products": [],
-            "message": "No purchase history found for this customer."
-        })
-
-    # Generate recommendations
-    try:
-        recommendations = model.recommend(customer_id)
-    except Exception as e:
-        return JsonResponse({"error": f"Model error: {e}"}, status=500)
-
-    return JsonResponse({
-        "customer_id": customer_id,
-        "recommended_products": recommendations
-    })
 
 MODEL_PATH = "recommender/trained_models/simple_cf_model.pkl"
 
@@ -1844,83 +1763,12 @@ def generate_recommendations(customer_id, top_n=5):
 # Django API Endpoint for Recommendation System
 # --------------------------------------------------
 
-from .ml_service import get_recommendations
+#from .ml_service import get_recommendations
 
 
 
-@csrf_exempt 
+@csrf_exempt  
 
-@csrf_exempt
-def get_recommendations(request, customer_id):
-    # ---------------------------
-    # DO NOT CONVERT TO INT
-    # customer_id is STRING
-    # Example: "SANKAP4923"
-    # ---------------------------
-
-    if model is None:
-        return JsonResponse({"error": "Model not loaded"}, status=500)
-
-    # Validate customer_id string
-    if not isinstance(customer_id, str):
-        return JsonResponse({"error": "Invalid customer_id"}, status=400)
-
-    # ---------------------------
-    # Fetch purchase history
-    # ---------------------------
-    from crmapp.models import PurchaseHistory
-
-    history = list(
-        PurchaseHistory.objects.filter(customer_id=customer_id)
-        .values("product_name", "product_id", "quantity", "total_amount", "purchased_at")
-        .order_by("-purchased_at")
-    )
-
-    if not history:
-        return JsonResponse({
-            "customer_id": customer_id,
-            "recommended_products": [],
-            "message": "No purchase history found for this customer."
-        })
-
-    # ---------------------------
-    # Generate Recommendations
-    # ---------------------------
-    try:
-        recommendations = model.recommend(customer_id)
-    except Exception as e:
-        return JsonResponse({"error": f"Model error: {str(e)}"}, status=500)
-
-    # ---------------------------
-    # Final Response
-    # ---------------------------
-    return JsonResponse({
-        "customer_id": customer_id,
-        "purchase_history": history,
-        "recommended_products": recommendations
-    })
-
-
-    # -------------------------
-    # Generate Recommendations
-    # -------------------------
-    try:
-        recommendations = generate_recommendations(customer_id)
-    except Exception as e:
-        return JsonResponse(
-            {"status": False, "error": f"Internal error: {str(e)}"},
-            status=500
-        )
-
-    # Final successful response
-    return JsonResponse(
-        {
-            "status": True,
-            "customer_id": customer_id,
-            "recommendations": recommendations
-        },
-        status=200
-    )
 # --------------------------------------------
 # Load trained CF model once at server startup
 # -------------------------------------------- 
@@ -2549,3 +2397,567 @@ def service_purchase_history(request, customer_id):
         })
 
     return JsonResponse({"services": result})
+
+
+from rest_framework.decorators import api_view
+from rest_framework.response import Response
+from rest_framework import status
+
+from recommender.hybrid_recommender import get_hybrid_recommendations
+
+
+@api_view(["GET"])
+def hybrid_recommendations_api(request, customer_id):
+    """
+    API: Get hybrid recommendations for a customer
+    Includes:
+    - Service upsell
+    - CF / fallback product recommendations
+    """
+
+    try:
+        recommendations = get_hybrid_recommendations(customer_id=customer_id)
+
+        return Response(
+            {
+                "customer_id": customer_id,
+                "total_recommendations": len(recommendations),
+                "recommendations": recommendations,
+            },
+            status=status.HTTP_200_OK,
+        )
+
+    except Exception as e:
+        return Response(
+            {"error": str(e)},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        )
+
+
+from django.http import JsonResponse
+from recommender.models import PestRecommendation
+
+def served_recommendations(request, customer_id):
+    recos = (
+        PestRecommendation.objects
+        .filter(customer_id=customer_id, serving_state='served')
+        .order_by('-final_rank_score')
+    )
+
+    data = []
+    for r in recos:
+        data.append({
+            "item_id": r.recommended_item_id,
+            "channel": r.reco_channel,
+            "recommendation_type": r.recommendation_type,
+            "score": float(r.final_rank_score),
+            "explanation": r.explanation
+        })
+
+    return JsonResponse({
+        "customer_id": customer_id,
+        "recommendations": data
+    })
+
+
+from django.http import JsonResponse
+from recommender.models import PestRecommendation
+
+def served_product_recommendations(request, customer_id):
+    recos = (
+        PestRecommendation.objects
+        .filter(
+            customer_id=customer_id,
+            serving_state='served',
+            reco_channel='product'
+        )
+        .order_by('-final_rank_score')
+    )
+
+    data = [{
+        "product_id": r.recommended_product_id,
+        "recommendation_type": r.recommendation_type,
+        "score": float(r.final_rank_score),
+        "explanation": r.explanation
+    } for r in recos]
+
+    return JsonResponse({
+        "customer_id": customer_id,
+        "type": "product",
+        "recommendations": data
+    })
+
+def served_service_recommendations(request, customer_id):
+    recos = (
+        PestRecommendation.objects
+        .filter(
+            customer_id=customer_id,
+            serving_state='served',
+            reco_channel='service'
+        )
+        .order_by('-final_rank_score')
+    )
+
+    data = [{
+        "service_id": r.recommended_service_id,
+        "recommendation_type": r.recommendation_type,
+        "score": float(r.final_rank_score),
+        "explanation": r.explanation
+    } for r in recos]
+
+    return JsonResponse({
+        "customer_id": customer_id,
+        "type": "service",
+        "recommendations": data
+    })
+
+
+
+from django.shortcuts import render
+from django.utils import timezone 
+from django.http import JsonResponse
+from django.utils import timezone
+import uuid
+
+from recommender.models import (
+    PestRecommendation,
+    RecommendationInteraction
+)
+
+
+from django.utils import timezone
+import uuid
+
+def customer_recommendations(request, customer_id):
+    recos = PestRecommendation.objects.filter(customer_fk=customer_id)
+
+    now = timezone.now()
+
+    for r in recos:
+        if r.exposed_at:
+            continue
+
+        exposure_id = str(uuid.uuid4())
+
+        r.exposed_at = now
+        r.exposure_channel = 'crm'
+        r.exposure_id = exposure_id
+        r.serving_state = 'exposed'
+        r.save(update_fields=[
+            'exposed_at',
+            'exposure_channel',
+            'exposure_id',
+            'serving_state'
+        ])
+
+        RecommendationInteraction.objects.create(
+            recommendation=r,
+            customer=r.customer,
+            product=r.recommended_product,
+            interaction_type='exposed',
+            interaction_channel='crm',
+            event_time=now,
+            exposure_id=exposure_id,
+            metadata={"source": "crm_ui"}
+        )
+
+    return JsonResponse({"count": recos.count()})
+
+from recommender.message_builder import build_recommendation_message
+
+def get_customer_message(request, customer_id):
+    customer = customer_details.objects.get(customerid=customer_id)
+
+    recommendations = PestRecommendation.objects.filter(
+        customer_fk=customer.id,
+        serving_state="pending",
+        is_active=1
+    ).order_by("priority", "-final_score")
+
+    message = build_recommendation_message(customer, recommendations)
+
+    return JsonResponse({"message": message})
+
+
+
+
+from django.http import JsonResponse
+from crmapp.models import customer_details
+from recommender.models import PestRecommendation
+from recommender.services.message_builder import MessageBuilder
+from recommender.services.recommendation_fetcher import (
+    fetch_upsell,
+    fetch_crosssell,
+)
+
+
+def customer_message_api(request, customer_code):
+
+    # 1️⃣ Resolve customer (STRING → DB)
+    try:
+        customer = customer_details.objects.get(customerid=customer_code)
+    except customer_details.DoesNotExist:
+        return JsonResponse({"error": "Customer not found"}, status=404)
+
+    # 2️⃣ Single source of truth (NO ORM LEAKS)
+    recommendations = {
+        "upsell": fetch_upsell(customer),
+        "cross_sell": fetch_crosssell(customer),
+    }
+
+    # 3️⃣ Channel-aware message
+    channel = request.GET.get("channel", "whatsapp")
+
+    message_body = MessageBuilder.build(
+        customer=customer,
+        recommendations=recommendations,
+        channel=channel,
+    )
+
+    return JsonResponse({
+        "status": "success",
+        "customer_code": customer.customerid,
+        "customer_name": customer.fullname,
+        "primary_contact": customer.primarycontact,
+        "primary_email": customer.primaryemail,
+
+        # 🔑 UI & Analytics Ready
+        "recommendations": recommendations,
+
+        # 🔑 Messaging Ready
+        "message_body": message_body,
+    })
+
+
+from django.http import JsonResponse
+from crmapp.models import customer_details
+from recommender.services.recommendation_fetcher import (
+    fetch_upsell,
+    fetch_crosssell,
+)
+from recommender.services.message_builder import MessageBuilder
+
+
+# -------------------------------
+# RECOMMENDATIONS VIEW
+# -------------------------------
+
+
+from recommender.messaging.composer import compose_message
+def recommendations_view_part(request, customer_code):
+    customer = get_object_or_404(
+        customer_details,
+        customerid=customer_code
+    )
+
+
+    channel = request.GET.get("channel", "whatsapp")
+
+
+    recommendations = {
+        "upsell": fetch_upsell(customer),
+        "cross_sell": fetch_crosssell(customer),
+    }
+
+
+    message_body = compose_message(
+        customer=customer,
+        recommendations=recommendations,
+        channel=channel
+    )
+
+
+    return JsonResponse({
+        "status": "success",
+        "customer_code": customer.customerid,
+        "recommendations": recommendations,
+        "message_body": message_body
+    })
+
+
+
+def recommendation_message_view(request, customer_code):
+    customer = get_object_or_404(
+        customer_details,
+        customerid=customer_code
+    )
+
+
+    recommendations = {
+        "upsell": fetch_upsell(customer),
+        "cross_sell": fetch_crosssell(customer),
+    }
+
+
+    template = MessageTemplates.objects.get(
+        is_default=True
+    ).body
+
+
+    message_body = compose_message(
+        template,
+        customer,
+        recommendations
+    )
+
+
+    return JsonResponse({
+        "customer": customer.customerid,
+        "message_body": message_body,
+        "recommendations": recommendations
+ })
+
+# -------------------------------
+# CUSTOMER MESSAGE VIEW
+# -------------------------------
+def customer_message_view(request, customer_code):
+    channel = request.GET.get("channel", "whatsapp")
+
+    try:
+        customer = customer_details.objects.get(customerid=customer_code)
+    except customer_details.DoesNotExist:
+        return JsonResponse({"error": "Customer not found"}, status=404)
+
+    recommendations = {
+        "upsell": fetch_upsell(customer),
+        "cross_sell": fetch_crosssell(customer),
+    }
+
+    message = MessageBuilder.build(
+        customer=customer,
+        recommendations=recommendations,
+        channel=channel,
+    )
+
+    return JsonResponse({
+        "customer_code": customer.customerid,
+        "message": message,
+    })
+
+
+@csrf_exempt
+def customer_reply_api(request):
+    if request.method != "POST":
+        return JsonResponse({"error": "POST only"}, status=405)
+
+    try:
+        payload = json.loads(request.body)
+
+        recommendation_id = payload.get("recommendation_id")
+        action = payload.get("action")  # accepted / rejected
+
+        if action not in ["accepted", "rejected"]:
+            return JsonResponse({"error": "Invalid action"}, status=400)
+
+        rec = PestRecommendation.objects.get(id=recommendation_id)
+
+        rec.action = action
+        rec.responded_at = timezone.now()
+        rec.save(update_fields=["action", "responded_at"])
+
+        return JsonResponse({
+            "status": "success",
+            "recommendation_id": rec.id,
+            "action": action
+        })
+
+    except PestRecommendation.DoesNotExist:
+        return JsonResponse({"error": "Recommendation not found"}, status=404)
+
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=500)
+
+ 
+from recommender.pipelines.service_regenerator import regenerate_services
+
+from django.db.models import Max, Q
+from django.utils import timezone
+
+from django.db.models import Max, Q
+from django.utils import timezone
+
+from recommender.models import PestRecommendation
+from crmapp.models import service_management
+
+
+from django.db.models import Max, Q
+from django.utils import timezone
+from recommender.models import PestRecommendation
+from crmapp.models import service_management
+
+VALID_SERVICE_SUBJECTS = {
+    "General Pest Control",
+    "Cockroach Management Service",
+    "Bed Bugs Management",
+    "Bed Bug Management Service",
+    "Rodent Control Service",
+}
+
+
+def get_recommendations(customer_id, intent, limit_products=7, limit_services=3):
+
+    now = timezone.now()
+
+    base_filter = Q(
+        business_intent=intent,
+        is_active=1
+    ) & (
+        Q(valid_until__isnull=True) |
+        Q(valid_until__gt=now)
+    )
+
+    # ---------------- CUSTOMER SCOPE ----------------
+    if customer_id not in (None, "ALL"):
+        customer_filter = Q(canonical_customer_id=customer_id)
+    else:
+        customer_filter = Q()
+
+    qs = PestRecommendation.objects.filter(base_filter & customer_filter)
+
+    # ---------------- PRODUCTS ----------------
+    products = list(
+        qs.filter(
+            reco_channel="product",
+            recommended_product_id__isnull=False
+        )
+        .values(
+            product_id=Max("recommended_product_id"),
+            product_name=Max("recommended_product__product_name"),
+            confidence=Max("final_score")
+        )
+        .order_by("-confidence")[:limit_products]
+    )
+
+    # ---------------- SERVICES ----------------
+    services = []
+
+    if customer_id not in (None, "ALL"):
+        service_qs = (
+            service_management.objects
+            .filter(
+                customer_id=customer_id,
+                contract_status="Completed",
+                service_subject__in=VALID_SERVICE_SUBJECTS
+            )
+            .values("service_subject")
+            .annotate(confidence=Max("total_price"))
+            .order_by("-confidence")[:limit_services]
+        )
+
+        services = [
+            {
+                "service_id": idx + 1,  # UI-safe synthetic id
+                "service_name": s["service_subject"],
+                "confidence": 0.85
+            }
+            for idx, s in enumerate(service_qs)
+        ]
+
+    # ---------------- GLOBAL FALLBACK ----------------
+    if customer_id not in (None, "ALL") and not products and not services:
+        return get_recommendations(
+            customer_id="ALL",
+            intent=intent,
+            limit_products=limit_products,
+            limit_services=limit_services
+        )
+
+    return products, services
+
+
+from django.http import JsonResponse 
+from recommender.pipelines.service_regenerator import regenerate_services
+
+def regenerate_service_view(request, customer_id):
+    intent = request.GET.get("intent", "upsell")
+
+    count = regenerate_services(customer_id, intent)
+
+    return JsonResponse({
+        "status": "success",
+        "intent": intent,
+        "services_created": count
+    })
+
+
+
+
+from django.http import JsonResponse
+from crmapp.models import customer_details
+from recommender.message_composer import compose_prompt
+from open_ai.views import generate_ai_message
+from recommender.queries import fetch_recommendations
+
+def generate_message(request, customer_id):
+    channel = request.GET.get("channel", "whatsapp")
+
+    customer = customer_details.objects.get(id=customer_id)
+    recommendations = fetch_recommendations(customer.id)
+
+    if not recommendations:
+        return JsonResponse({
+            "status": "empty",
+            "message": "No recommendations available"
+        })
+
+    prompt = compose_prompt(
+        customer_name=customer.customer_name,
+        channel=channel,
+        recommendations=recommendations
+    )
+
+    message = generate_ai_message(prompt)
+
+    return JsonResponse({
+        "status": "success",
+        "customer": customer.customer_name,
+        "channel": channel,
+        "message": message
+    })
+
+
+from crmapp.models import MessageTemplates
+
+def get_message_template(channel, category, lead_status=None):
+    qs = MessageTemplates.objects.filter(
+        message_type=channel,
+        category=category,
+        is_active=True
+    )
+
+    if lead_status:
+        qs = qs.filter(lead_status=lead_status)
+
+    return qs.first()
+
+
+from django.http import JsonResponse
+from crmapp.models import customer_details 
+from .views import get_message_template
+
+def recommendation_message_view(request, customer_id):
+
+    customer = customer_details.objects.get(customerid=customer_id)
+
+    # 1️⃣ Get model recommendations
+    recommendations = get_model_recommendations(customer.id)
+
+    # 2️⃣ Pick template (example: WhatsApp, lead-hot)
+    template = get_message_template(
+        channel="whatsapp",
+        category="lead",
+        lead_status=customer.lead_status
+    )
+
+    # 3️⃣ Render final message
+    final_message = render_message(
+        template.body,
+        customer,
+        recommendations
+    )
+
+    return JsonResponse({
+        "customer": customer.customerid,
+        "channel": template.message_type,
+        "message": final_message
+    })

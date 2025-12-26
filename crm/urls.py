@@ -44,6 +44,9 @@ urlpatterns = [
     path('api/', include('recommender.urls')),
     path("recommender/", include("recommender.urls")),
     path("api/", include("crmapp.urls")),
+    
+    
+    path("api/recommendations/", include("recommender.urls")),
 
   
 
